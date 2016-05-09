@@ -1,8 +1,8 @@
 apply plugin: 'com.android.library'
 
 android {
-	compileSdkVersion 23
-	buildToolsVersion "23.0.1"
+	compileSdkVersion 21
+	buildToolsVersion "21.1.2"
 
 	defaultConfig {
 		minSdkVersion 8
@@ -25,7 +25,7 @@ android {
 }
 
 task ndkBuild(type: Exec) {
-	def ndkDir = project.plugins.findPlugin('com.android.library').sdkHandler.getNdkFolder()
+	def ndkDir = project.plugins.findPlugin('com.android.library').sdkHandler.getNdkFolder().getAbsolutePath().replace(";", "");
 	commandLine "$ndkDir/ndk-build.cmd", '-C', 'src/main/jni',
 			"NDK_OUT=$buildDir/ndk/obj",
 			"NDK_APP_DST_DIR=$buildDir/ndk/libs/\$(TARGET_ARCH_ABI)"

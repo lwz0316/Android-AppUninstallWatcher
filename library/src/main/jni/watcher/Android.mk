@@ -23,6 +23,7 @@ LOCAL_C_INCLUDES += \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/../common \
 	$(LOCAL_PATH)/../http \
+	$(LOCAL_PATH)/../curl/include
 
 LOCAL_STATIC_LIBRARIES := \
 	libcommon \

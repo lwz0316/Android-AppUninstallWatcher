@@ -22,6 +22,8 @@
 #include <sys/inotify.h>
 #include <sys/wait.h>
 
+#include <sys/timeb.h>
+
 #include "chttp.h"
 #include "common.h"
 
@@ -29,205 +31,249 @@
 #define LOG_TAG         "Watcher"
 
 /* child process signal function */
-static void sig_child()
-{
-	int status;
-	while(waitpid(-1, &status, WNOHANG) > 0);
+static void sig_child() {
+    int status;
+    while (waitpid(-1, &status, WNOHANG) > 0);
 
-	return;
+    return;
 }
 
-int main(int argc, char *argv[])
-{
-	int i;
-	int should_open_browser = 0;
-	char *package_name = NULL;
-	char *url = NULL;
-	char *url_file_path = NULL;
+long long getSystemTime() {
+    struct timeb t;
+    ftime(&t);
+    return 1000 * t.time + t.millitm;
+}
 
-	LOGI(LOG_TAG, "Copyright (c) 2015, Vincent Cheung<coolingfall@gmail.com>");
+int main(int argc, char *argv[]) {
+    int i;
+    int should_open_browser = 0;
+    char *package_name = NULL;
+    char *url = NULL;
+    char *url_file_path = NULL;
+    char *http_post_params = NULL;
+    struct curl_slist *header_list = NULL;
 
-	for (i = 0; i < argc; i ++)
-	{
-		if (!strcmp("-p", argv[i]))
-		{
-			package_name = argv[i + 1];
-			LOGD(LOG_TAG, "package name: %s", package_name);
-		}
+   LOGI(LOG_TAG, "Copyright (c) 2015, Vincent Cheung<coolingfall@gmail.com>");
 
-		if (!strcmp("-u", argv[i]))
-		{
-			url = argv[i + 1];
-			LOGD(LOG_TAG, "url: %s", url);
-		}
+    for (i = 0; i < argc; i++) {
+        if (!strcmp("-p", argv[i])) {
+            package_name = argv[i + 1];
+            LOGD(LOG_TAG, "package name: %s", package_name);
+        }
 
-		if (!strcmp("-f", argv[i]))
-		{
-			url_file_path = argv[i + 1];
-			LOGD(LOG_TAG, "url file path: %s", url_file_path);
-		}
+        if (!strcmp("-u", argv[i])) {
+            url = argv[i + 1];
+            LOGD(LOG_TAG, "url: %s", url);
+        }
 
-		if (!strcmp("-b", argv[i]))
-		{
-			should_open_browser = atoi(argv[i + 1]);
-			LOGD(LOG_TAG, "should open brwoser: %d", should_open_browser);
-		}
-	}
+        if (!strcmp("-f", argv[i])) {
+            url_file_path = argv[i + 1];
+            LOGD(LOG_TAG, "url file path: %s", url_file_path);
+        }
 
-	/* get the directory for watcher */
-	char *app_dir = str_stitching("/data/data/", package_name);
-	char *lib_dir = str_stitching(app_dir, "/lib");
-	char *watch_file_path = str_stitching(app_dir, "/uninstall.watch");
+        if (!strcmp("-b", argv[i])) {
+            should_open_browser = atoi(argv[i + 1]);
+            LOGD(LOG_TAG, "should open brwoser: %d", should_open_browser);
+        }
 
-	/* the file path should not be null */
-	if (watch_file_path == NULL)
-	{
-		LOGE(LOG_TAG, "watch file path is NULL");
-		exit(EXIT_FAILURE);
-	}
+        if (!strcmp("-P", argv[i])) {
+            http_post_params = argv[i + 1];
+            LOGD(LOG_TAG, "url post params: %s", http_post_params);
+        }
 
-	/* avoid zombie process */
-	signal(SIGCHLD, sig_child);
+        if (!strcmp("-H", argv[i])) {
+            header_list = curl_slist_append(header_list, argv[i + 1]);
+            LOGD(LOG_TAG, "url header : %s", argv[i + 1]);
+        }
+    }
 
-	/* find pid by name and kill them */
-	int pid_list[100];
-	int total_num = find_pid_by_name(argv[0], pid_list);
-	for (i = 0; i < total_num; i ++)
-	{
-		int retval = 0;
-		int watcher_pid = pid_list[i];
-		if (watcher_pid > 1 && watcher_pid != getpid())
-		{
-			retval = kill(watcher_pid, SIGKILL);
-			if (!retval)
-            {
+    /* get the directory for watcher */
+    char *app_dir = str_stitching("/data/data/", package_name);
+    char *lib_dir = str_stitching(app_dir, "/lib");
+    char *watch_file_path = str_stitching(app_dir, "/uninstall.watch");
+
+    /* the file path should not be null */
+    if (watch_file_path == NULL) {
+        LOGE(LOG_TAG, "watch file path is NULL");
+        exit(EXIT_FAILURE);
+    }
+
+    /* avoid zombie process */
+    signal(SIGCHLD, sig_child);
+
+    /* find pid by name and kill them */
+    int pid_list[100];
+    int total_num = find_pid_by_name(argv[0], pid_list);
+    for (i = 0; i < total_num; i++) {
+        int retval = 0;
+        int watcher_pid = pid_list[i];
+        if (watcher_pid > 1 && watcher_pid != getpid()) {
+            retval = kill(watcher_pid, SIGKILL);
+            if (!retval) {
                 LOGD(LOG_TAG, "kill watcher process success: %d", watcher_pid);
             }
-            else
-            {
+            else {
                 LOGD(LOG_TAG, "kill wathcer process %d fail: %s", watcher_pid, strerror(errno));
                 exit(EXIT_SUCCESS);
             }
-		}
-	}
+        }
+    }
 
-	/* get child process */
-	pid_t pid = fork();
-	if (pid < 0)
-	{
-		LOGE(LOG_TAG, "fork failed");
-	}
-	else if (pid == 0)
-	{
-		/* inotify init */
-		int fd = inotify_init();
-		if (fd < 0)
-		{
-			LOGE(LOG_TAG, "inotify_init init failed");
-			exit(EXIT_FAILURE);
-		}
+    /* get child process */
+    pid_t pid = fork();
+    if (pid < 0) {
+        LOGE(LOG_TAG, "fork failed");
+    }
+    else if (pid > 0) {
+        /* parent process, main process */
+        if (waitpid(pid, NULL, 0) != pid)
+        {
+            LOGE(LOG_TAG, "waitepid failed");
+            exit(EXIT_FAILURE);
+        }
+        LOGD(LOG_TAG, "waitepid success and exit parent[%d] process", pid);
+        exit(EXIT_SUCCESS);
+    }
+    else { /* pid == 0 */
+        pid_t second_pid = fork();
+        if (second_pid < 0) {
+            LOGE(LOG_TAG, "fork second failed");
+        }
+        else if (second_pid > 0) {
+            exit(EXIT_SUCCESS);
+        }
+        else { /* pid == 0  second process*/
+            sleep(2); /* wait for the first process exit*/
+            LOGD(LOG_TAG, "I am the child process.pid: %d\t %d\t ppid:%d\n", getpid(), second_pid,
+                 getppid());
+            /* inotify init */
+            int fd = inotify_init();
+            if (fd < 0) {
+                LOGE(LOG_TAG, "inotify_init init failed");
+                exit(EXIT_FAILURE);
+            }
 
-		int w_fd = open(watch_file_path, O_RDWR | O_CREAT | O_TRUNC,
-				S_IRWXU | S_IRWXG | S_IRWXO);
-		if (w_fd < 0)
-		{
-			LOGE(LOG_TAG, "open watch file error");
-			exit(EXIT_FAILURE);
-		}
+            int w_fd = open(watch_file_path, O_RDWR | O_CREAT | O_TRUNC,
+                            S_IRWXU | S_IRWXG | S_IRWXO);
+            if (w_fd < 0) {
+                LOGE(LOG_TAG, "open watch file error");
+                exit(EXIT_FAILURE);
+            }
 
-		close(w_fd);
+            close(w_fd);
 
-		/* add watch in inotify */
-		int watch_fd = inotify_add_watch(fd, watch_file_path, IN_DELETE);
-		if (watch_fd < 0)
-		{
-			LOGE(LOG_TAG, "inotify_add_watch failed");
-			exit(EXIT_FAILURE);
-		}
+            /* add watch in inotify */
+            int watch_fd = inotify_add_watch(fd, watch_file_path, IN_DELETE);
+            if (watch_fd < 0) {
+                LOGE(LOG_TAG, "inotify_add_watch failed");
+                exit(EXIT_FAILURE);
+            }
 
-		void *p_buf = malloc(sizeof(struct inotify_event));
-		if (p_buf == NULL)
-		{
-			LOGD(LOG_TAG, "malloc inotify event failed");
-			exit(EXIT_FAILURE);
-		}
+            void *p_buf = malloc(sizeof(struct inotify_event));
+            if (p_buf == NULL) {
+                LOGD(LOG_TAG, "malloc inotify event failed");
+                exit(EXIT_FAILURE);
+            }
 
-		LOGD(LOG_TAG, "watcher process fork ok, start to watch");
+            LOGD(LOG_TAG, "watcher process fork ok, start to watch");
 
-		while (1)
-		{
-			/* read will block process */
-			size_t read_bytes = read(fd, p_buf, sizeof(struct inotify_event));
+            fd_set fds; // file desc set
+            struct timeval timeout = {0,
+                                      0}; // {seconds, milliseconds} wait for 0ms; set 0 for no-block
 
-			/* delay 200ms */
-			usleep(200*1000);
+            while (1) {
+                /* read will block process */
+                LOGD(LOG_TAG, "before read");
+                size_t read_bytes = read(fd, p_buf, sizeof(struct inotify_event));
 
-			/* to check if the app has uninstalled, indeed */
-			FILE *lib_dir_file = fopen(lib_dir, "r");
-			FILE *app_dir_file = fopen(app_dir, "r");
-			if (lib_dir_file == NULL || app_dir_file == NULL)
-			{
-				break;
-			}
-			else
-			{
-				/* close app dir file */
-				fclose(lib_dir_file);
-				fclose(app_dir_file);
+                /* delay 200ms */
+//			    usleep(200*1000);
+                LOGD(LOG_TAG, "before select");
 
-				/* add notify watch again */
-				int w_fd = open(watch_file_path, O_WRONLY | O_CREAT | O_TRUNC,
-						S_IRWXU | S_IRWXG | S_IRWXO);
-				close(w_fd);
+                long long start = getSystemTime();
+                FD_ZERO(&fds); // clear fds for every time
+                FD_SET(1, &fds); // add fake file desc
+                int ret = 0;
+                ret = select(1 + 1, &fds, NULL, NULL, &timeout);
+                LOGD(LOG_TAG, "after select result %d", ret);
 
-				int watch_fd = inotify_add_watch(fd, watch_file_path, IN_DELETE);
-				if (watch_fd < 0)
-				{
-					LOGE(LOG_TAG, "inotify_add_watch failed");
-					free(p_buf);
-					exit(EXIT_FAILURE);
-				}
-			}
-		}
+                long long end = getSystemTime();
 
-		free(p_buf);
-		inotify_rm_watch(fd, IN_DELETE);
-		LOGD(LOG_TAG, "the app has been uninstalled, call url");
+                LOGD(LOG_TAG, "time: %lld ms\n", (end - start));
 
-		/* if the url was saved in file, read out */
-		if (url_file_path != NULL)
-		{
-			int url_fd = open(url_file_path, O_RDONLY);
-			if (url_fd < 0)
-			{
-				LOGE(LOG_TAG, "url file open error");
-				exit(EXIT_FAILURE);
-			}
+                if (ret < 0) {
+                    LOGE(LOG_TAG, "sleep failed");
+                    free(p_buf);
+                    exit(EXIT_FAILURE);
+                }
 
-			char buf[300] = {0};
-			if (read(url_fd, buf, 300) > 0)
-			{
-				url = buf;
-				LOGD(LOG_TAG, "url from file: %s", url);
-			}
+                /* to check if the app has uninstalled, indeed */
+                FILE *lib_dir_file = fopen(lib_dir, "r");
+                FILE *app_dir_file = fopen(app_dir, "r");
+                if (lib_dir_file == NULL || app_dir_file == NULL) {
+                    LOGD(LOG_TAG, "DELETE FILE");
+                    break;
+                }
+                else {
+                    /* close app dir file */
+                    fclose(lib_dir_file);
+                    fclose(app_dir_file);
 
-			close(url_fd);
-		}
+                    /* add notify watch again */
+                    int w_fd = open(watch_file_path, O_WRONLY | O_CREAT | O_TRUNC,
+                                    S_IRWXU | S_IRWXG | S_IRWXO);
+                    close(w_fd);
 
-		/* call url */
-		chttp_get(url);
+                    int watch_fd = inotify_add_watch(fd, watch_file_path, IN_DELETE);
+                    if (watch_fd < 0) {
+                        LOGE(LOG_TAG, "inotify_add_watch failed");
+                        free(p_buf);
+                        exit(EXIT_FAILURE);
+                    }
+                }
+            }
 
-		/* open browser if needed */
-		if (should_open_browser)
-		{
-			open_browser(url);
-		}
+            free(p_buf);
+            inotify_rm_watch(fd, IN_DELETE);
 
-		exit(EXIT_SUCCESS);
-	}
-	else
-	{
-		/* parent process */
-		exit(EXIT_SUCCESS);
-	}
+            LOGRD(LOG_TAG, "the app has been uninstalled");
+
+            /* if the url was saved in file, read out */
+            if (url_file_path != NULL) {
+                int url_fd = open(url_file_path, O_RDONLY);
+                if (url_fd < 0) {
+                    LOGE(LOG_TAG, "url file open error");
+                    exit(EXIT_FAILURE);
+                }
+
+                char buf[300] = {0};
+                if (read(url_fd, buf, 300) > 0) {
+                    url = buf;
+                    LOGD(LOG_TAG, "url from file: %s", url);
+                }
+
+                close(url_fd);
+            }
+
+            /* call url */
+            if (http_post_params) {
+                chttp_post(url, header_list, http_post_params);
+            } else {
+                chttp_get(url, header_list);
+            }
+
+            if (header_list) {
+                curl_slist_free_all(header_list);
+            }
+
+            /* open browser if needed */
+            if (should_open_browser) {
+                LOGD(LOG_TAG, "the app has been uninstalled, open browser");
+                open_browser(url);
+            }
+
+            exit(EXIT_SUCCESS);
+        }
+
+    }
 }

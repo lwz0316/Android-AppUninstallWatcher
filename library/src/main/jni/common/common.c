@@ -54,6 +54,7 @@ void open_browser(char *url)
 	/* is the version is greater than 17 */
 	if (version >= 17 || version == 0)
 	{
+		LOGD("##", "open broswer %s", url);
 		execlp("am", "am", "start", "--user", "0",
 				"-a", "android.intent.action.VIEW", "-d", url, (char *)NULL);
 	}

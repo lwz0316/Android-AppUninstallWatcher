@@ -11,7 +11,7 @@
 #ifndef __CHTTP_H__
 #define __CHTTP_H__
 
-void chttp_get(char *url);
-void chttp_post(char *url);
+void chttp_get(char *url, struct curl_slist *headers);
+void chttp_post(char *url, struct curl_slist *headers, char* post_fields);
 
 #endif
