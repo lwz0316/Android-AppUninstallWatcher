@@ -2,9 +2,29 @@ Android-AppUninstallWatcher
 ===========================
 App uninstall watcher. You can monitor uninstall of your app.
 
+**This library forked from** [Coolerfall/Android-AppUninstallWatcher](https://github.com/Coolerfall/Android-AppUninstallWatcher), just add the supprot for http post params and http headers 
+
 Usage
 =====
-* This wathcer can be added in application or service in your app, use `Watcher.run(context, url, shouldOpenBrowser)` to run the watcher.
+* This wathcer can be added in application or service in your app, use 
+	
+		new Watcher.Executor(context)
+				.url(URL)
+				.addPostParam("hello", "world")
+				.addPostParam("extra", "uninstall-watcher")
+				.addHeader("Content-Type", "application/json")
+				.addHeader("My-Header", "Android-ACTION-UNINSTALL")
+				.shouldOpenBrowser(true)
+				.execute();	
+
+	to run the watcher.
+
+* If headers contains `Content-Type` and the value equals to `application/json`, the http params will convert to the json string. 
+
+		// Content-Type: application/json
+		// post params will convert to the json string.
+		{"hello":"world", "extra":"uninstall-watcher"}
+
 * If `shouldOpenBrowser` is true, the wathcer will open default browser with `url`. Don't forget to add *android.permission.INTERNET* permission in manifest.
 * If you want to keep your app alive, see also [Android-AppDaemon][1].
 
@@ -12,16 +32,11 @@ Note
 ====
 This library dosen't work on all phones, such as xiaomi phones.
 
-Download
-========
-If you are building with Gradle, simply add the following line to the dependencies section of your build.gradle file:
-
-    compile 'com.coolerfall:android-app-uninstall-watcher:1.0.3'
 
 License
 =======
 
-    Copyright (C) 2015-2016 Vincent Cheung
+    Copyright (C) 2015-2016 Wenzhu Liu
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
